@@ -16,8 +16,9 @@ GPU SpMV 是一个 C++17 / CUDA 稀疏矩阵向量乘法库，提供 CSR 与 ELL
 - 可运行示例 `examples/basic_spmv.cpp` 与合成基准工具 `tools/spmv_bench.cu`。
 - 序列化格式升级到 v2（完整性校验和同时覆盖 `values` 数组，v1 文件仍可读），并补充
   `spmv_result_error()`、`spmv_auto_config_ell()` 等 API。
-- 自托管 runner 上的 `cuda-test` CI 任务，以及 Doxygen 注释、贡献指南与规范驱动开发
-  （SDD）工作流文档。
+- CI 增加 CUDA 编译门禁：在 `nvidia/cuda:12.4.1-devel` 容器中启用
+  `SPMV_REQUIRE_CUDA=ON` 编译全部 `.cu` 源码（托管 runner 无 GPU，只编译不执行）；
+  另有 Doxygen 注释、贡献指南与规范驱动开发（SDD）工作流文档。
 
 ### 变更
 
@@ -59,7 +60,8 @@ GPU SpMV 是一个 C++17 / CUDA 稀疏矩阵向量乘法库，提供 CSR 与 ELL
 
 - SpMV 函数增加向量大小参数，并优化 Phase 1 执行路径。
 - 整理 CMake 与公共头文件，移除废弃的 `common.cpp`，完善 CSR / ELL 与内核测试。
-- CI 调整为仅 CPU 安全的格式检查（GitHub 托管 runner 无 GPU，禁用 CUDA 构建任务）。
+- CI 拆分：CPU 安全的格式检查与 CPU-only 构建测试保持不变，另设独立的 CUDA 编译 job
+  （托管 runner 无 GPU，GPU 测试仍只能本地执行）。
 
 ### 修复
 

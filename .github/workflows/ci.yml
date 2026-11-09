@@ -55,3 +55,29 @@ jobs:
 
       - name: Run tests
         run: ctest --test-dir build --output-on-failure
+
+  # GitHub 托管 runner 没有 GPU，但 CUDA 源码至少必须被真实编译。
+  # 没有这个 job 时，spmv_kernels.cu / test_spmv.cu / test_bandwidth.cu
+  # 从未进入任何 CI 检查，编译期回归完全不可见。
+  build-cuda:
+    name: Build (CUDA compile-only)
+    runs-on: ubuntu-latest
+    container:
+      image: nvidia/cuda:12.4.1-devel-ubuntu22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          apt-get update && apt-get install -y --no-install-recommends cmake ninja-build g++ git
+          rm -rf /var/lib/apt/lists/*
+
+      - name: Configure (CUDA enabled)
+        run: >
+          cmake -S . -B build -G Ninja
+          -DSPMV_REQUIRE_CUDA=ON
+          -DCMAKE_CUDA_ARCHITECTURES=75
+          -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build --parallel
