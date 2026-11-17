@@ -1,0 +1,69 @@
+name: CUDA tests (simulated H100)
+
+# Optional, non-required check. The hosted runners have no GPU, so this builds
+# the CUDA code and runs the unit tests on a simulated NVIDIA H100
+# (https://github.com/pantheongpu/pantheonsim). A simulator cannot reproduce
+# hardware-specific behaviour or timing, so it complements real-GPU testing.
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'src/**'
+      - 'include/**'
+      - 'tests/**'
+      - 'CMakeLists.txt'
+      - '.github/workflows/gpu-sim.yml'
+
+concurrency:
+  group: gpu-sim-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  cuda-sim:
+    name: CUDA 12.6, simulated H100
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Set up the simulated GPU and CUDA toolkit
+        uses: pantheongpu/setup-pantheonsim@deff5781e8adfd83dec98dd5242dcbc96a564773 # v0.1.10
+        with:
+          gpu: nvidia/h100
+          cuda-toolkit: "12.6"
+
+      # CUDA 12.6 because src/bandwidth.cpp reads cudaDeviceProp::memoryClockRate,
+      # which CUDA 13 removed. -fmad=false keeps the GPU sums bit-comparable to
+      # the host reference (ELLCorrectness uses a 1e-5 relative tolerance and
+      # fails with fused multiply-add). The simulator runs PTX only and needs a
+      # shared CUDA runtime, so the native architecture is replaced by
+      # compute_90 PTX and a shared cudart.
+      - name: Configure and build
+        run: |
+          export PATH=/usr/local/cuda-12.6/bin:$PATH
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
+                -DCMAKE_CUDA_COMPILER=/usr/local/cuda-12.6/bin/nvcc \
+                -DCMAKE_CUDA_ARCHITECTURES=90-virtual \
+                -DCMAKE_CUDA_RUNTIME_LIBRARY=Shared \
+                -DCMAKE_CUDA_FLAGS=-fmad=false
+          cmake --build build -j3
+
+      # The tests must really run on the simulated device: the output has to
+      # show the virtual GPU, the GoogleTest run has to pass, and a skipped
+      # or failed test or a simulator error fails the job.
+      - name: Run unit tests on the simulated GPU
+        run: |
+          set -o pipefail
+          vgpu run ./build/spmv_tests 2>&1 | tee build/tests.log
+          grep -q 'virtual GPU platform initialized' build/tests.log
+          grep -q '^\[  PASSED  \]' build/tests.log
+          grep -q 'OK \] SpMVPropertyTest.CSRCorrectness' build/tests.log
+          grep -q 'OK \] SpMVUnitTest.MergePathLargeVectorMatchesCpuReference' build/tests.log
+          ! grep -q 'FAILED\|SKIPPED\|VirtualGPU error\|no device\|no CUDA' build/tests.log
